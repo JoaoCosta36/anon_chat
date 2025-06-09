@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="pt-pt">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Chat com <%= otherUser.username %></title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <style>
+    body {
+      background-color: #1e293b;
+      color: white;
+      padding: 20px;
+    }
+    .chat-box {
+      max-width: 700px;
+      margin: 0 auto;
+      background-color: #334155;
+      border-radius: 8px;
+      padding: 20px;
+      height: 80vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .chat-header {
+      font-size: 1.25rem;
+      margin-bottom: 1rem;
+    }
+    .messages {
+      flex-grow: 1;
+      overflow-y: auto;
+      margin-bottom: 20px;
+      display: flex;
+      flex-direction: column;
+      scrollbar-width: thin;
+      scrollbar-color: #475569 transparent;
+    }
+    .messages::-webkit-scrollbar {
+      width: 8px;
+    }
+    .messages::-webkit-scrollbar-thumb {
+      background-color: #475569;
+      border-radius: 4px;
+    }
+    .message {
+      margin-bottom: 10px;
+      padding: 10px 15px;
+      border-radius: 12px;
+      max-width: 75%;
+      word-wrap: break-word;
+      white-space: pre-wrap;
+      position: relative;
+    }
+    .from-me {
+      background-color: #3b82f6;
+      align-self: flex-end;
+      color: white;
+      text-align: right;
+    }
+    .from-other {
+      background-color: #64748b;
+      align-self: flex-start;
+      color: white;
+    }
+    .timestamp {
+      font-size: 0.75rem;
+      margin-top: 4px;
+      color: #cbd5e1;
+    }
+    .read-status {
+      font-size: 0.7rem;
+      color: #a5b4fc;
+      margin-top: 2px;
+    }
+    form.d-flex > input.form-control,
+    form.d-flex > input[type="file"] {
+      background-color: #1e293b;
+      color: white;
+      border: 1px solid #475569;
+    }
+    form.d-flex > input.form-control::placeholder {
+      color: #cbd5e1;
+    }
+    #imagePreview {
+      max-width: 150px;
+      max-height: 150px;
+      margin-left: 10px;
+      border-radius: 8px;
+      object-fit: cover;
+    }
+  </style>
+</head>
+<body>
+  <div class="chat-box">
+    <div class="chat-header">
+      Conversa com <strong><%= otherUser.username %></strong>
+    </div>
+
+    <div class="messages" id="messages">
+      <% messages.forEach(msg => { %>
+        <div class="message <%= msg.fromUser && msg.fromUser._id.toString() === user._id.toString() ? 'from-me' : 'from-other' %>">
+          <% if (msg.imageUrl) { %>
+            <img src="<%= msg.imageUrl %>" alt="Imagem enviada" style="max-width: 100%; border-radius: 8px; margin-bottom: 5px;">
+          <% } %>
+          <% if (msg.text) { %>
+            <div><%= msg.text.replace(/\n/g, '<br>') %></div>
+          <% } %>
+          <div class="timestamp"><%= new Date(msg.createdAt).toLocaleString() %></div>
+          <% if (msg.fromUser && msg.fromUser._id.toString() === user._id.toString() && msg.read) { %>
+            <div class="read-status">Vista</div>
+          <% } %>
+        </div>
+      <% }) %>
+    </div>
+
+    <form id="chatForm" method="POST" enctype="multipart/form-data" action="/dashboard/chat/<%= otherUser._id %>/send" class="d-flex" aria-label="Enviar nova mensagem">
+      <input id="messageInput" name="message" class="form-control me-2" placeholder="Escreva sua mensagem..." autocomplete="off" aria-label="Campo de mensagem" />
+      <input id="imageInput" type="file" name="image" accept="image/*" class="form-control me-2" aria-label="Selecionar imagem" />
+      <img id="imagePreview" style="display:none;" alt="Pré-visualização da imagem" />
+      <button type="submit" class="btn btn-primary" aria-label="Botão enviar mensagem">Enviar</button>
+    </form>
+
+    <a href="/dashboard" class="btn btn-secondary mt-3">← Voltar ao dashboard</a>
+  </div>
+
+  <script>
+    const messagesDiv = document.getElementById('messages');
+    const messageInput = document.getElementById('messageInput');
+    const imageInput = document.getElementById('imageInput');
+    const imagePreview = document.getElementById('imagePreview');
+    const chatForm = document.getElementById('chatForm');
+
+    function scrollToBottom() {
+      messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+    scrollToBottom();
+
+    imageInput.addEventListener('change', () => {
+      const file = imageInput.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = e => {
+          imagePreview.src = e.target.result;
+          imagePreview.style.display = 'block';
+        };
+        reader.readAsDataURL(file);
+        messageInput.required = false;
+      } else {
+        imagePreview.style.display = 'none';
+        messageInput.required = true;
+      }
+    });
+
+    chatForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const formData = new FormData(chatForm);
+
+      if (!formData.get('message') && !formData.get('image').name) {
+        alert('Por favor, escreva uma mensagem ou selecione uma imagem.');
+        return;
+      }
+
+      try {
+        const response = await fetch(chatForm.action, {
+          method: 'POST',
+          body: formData
+        });
+
+        if (response.ok) {
+          messageInput.value = '';
+          imageInput.value = '';
+          imagePreview.style.display = 'none';
+          messageInput.required = true;
+          await loadMessages();
+        } else {
+          alert('Erro ao enviar mensagem.');
+        }
+      } catch (err) {
+        console.error('Erro no envio AJAX:', err);
+        alert('Erro na comunicação com o servidor.');
+      }
+    });
+
+    async function loadMessages() {
+      try {
+        const response = await fetch('/dashboard/api/chat/<%= otherUser._id %>/messages');
+        if (!response.ok) throw new Error('Erro ao buscar mensagens');
+        const data = await response.json();
+
+        messagesDiv.innerHTML = '';
+        data.forEach(msg => {
+          const div = document.createElement('div');
+          div.classList.add('message');
+          div.classList.add(msg.fromUser && msg.fromUser._id === '<%= user._id %>' ? 'from-me' : 'from-other');
+
+          let content = '';
+          if (msg.imageUrl) {
+            content += `<img src="${msg.imageUrl}" alt="Imagem enviada" style="max-width: 100%; border-radius: 8px; margin-bottom: 5px;">`;
+          }
+          if (msg.text) {
+            content += `<div>${msg.text.replace(/\n/g, '<br>')}</div>`;
+          }
+
+          div.innerHTML = content;
+
+          const ts = document.createElement('div');
+          ts.classList.add('timestamp');
+          ts.textContent = new Date(msg.createdAt).toLocaleString();
+          div.appendChild(ts);
+
+          if (msg.fromUser && msg.fromUser._id === '<%= user._id %>' && msg.read) {
+            const readDiv = document.createElement('div');
+            readDiv.classList.add('read-status');
+            readDiv.textContent = 'Vista';
+            div.appendChild(readDiv);
+          }
+
+          messagesDiv.appendChild(div);
+        });
+
+        scrollToBottom();
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    setInterval(loadMessages, 5000);
+  </script>
+</body>
+</html>

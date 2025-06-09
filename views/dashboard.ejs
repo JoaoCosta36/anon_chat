@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="pt-pt">
+<head>
+  <meta charset="UTF-8" />
+  <title>Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <style>
+    body {
+      background-color: #1e293b;
+      color: white;
+    }
+    .card {
+      background-color: #334155;
+      border: none;
+    }
+    .form-control, .form-select {
+      background-color: #1e293b;
+      color: white;
+      border: 1px solid #475569;
+    }
+    .form-control::placeholder, .form-select {
+      color: #cbd5e1;
+    }
+    .btn-primary {
+      background-color: #3b82f6;
+      border: none;
+    }
+    .btn-primary:hover {
+      background-color: #2563eb;
+    }
+    a {
+      color: #93c5fd;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    .list-group-item-action {
+      transition: background-color 0.2s;
+    }
+    .list-group-item-action:hover {
+      background-color: #475569;
+    }
+    .badge-unread {
+      background-color: #ef4444;
+      font-size: 0.75rem;
+      padding: 4px 8px;
+      border-radius: 999px;
+      margin-left: 8px;
+      color: white;
+    }
+  </style>
+</head>
+<body>
+  <div class="container py-5">
+    <header class="text-center mb-4">
+      <h1>Bem-vindo, <%= username %>!</h1>
+      <a href="/logout" class="btn btn-danger mt-2">Sair</a>
+    </header>
+
+    <section class="card p-4 mb-4" aria-labelledby="form-title">
+      <h3 id="form-title">Enviar mensagem</h3>
+      <form id="sendMessageForm" autocomplete="off" aria-describedby="sendStatus">
+        <div class="mb-3">
+          <label for="toUser" class="form-label">Para:</label>
+          <select id="toUser" name="toUser" class="form-select" required>
+            <option value="" disabled selected>Escolha um usuário</option>
+            <% users.forEach(user => { %>
+              <option value="<%= user._id %>" <%= user._id.toString() === userId ? 'disabled' : '' %>><%= user.username %></option>
+            <% }) %>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label for="message" class="form-label">Mensagem:</label>
+          <textarea id="message" name="message" class="form-control" rows="3" placeholder="Digite sua mensagem..." required></textarea>
+        </div>
+        <button class="btn btn-primary" type="submit">Enviar</button>
+      </form>
+      <div id="sendStatus" class="mt-2" role="alert" aria-live="polite"></div>
+    </section>
+
+    <section class="card p-4" aria-labelledby="threads-title">
+      <h3 id="threads-title">Mensagens recebidas</h3>
+      <div id="threads-container" class="list-group" aria-live="polite">
+        <!-- Lista de threads será atualizada aqui via JS -->
+      </div>
+    </section>
+  </div>
+
+<script>
+  async function atualizarThreads() {
+    try {
+      const response = await fetch('/dashboard/api/threads');
+      if (!response.ok) throw new Error('Erro ao buscar threads');
+      const threads = await response.json();
+
+      const container = document.getElementById('threads-container');
+      container.innerHTML = '';
+
+      if (!threads.length) {
+        container.innerHTML = '<p class="text-muted">Nenhuma mensagem recebida.</p>';
+        return;
+      }
+
+      threads.forEach(thread => {
+        const unreadBadge = thread.unreadCount > 0
+          ? `<span class="badge-unread">${thread.unreadCount}</span>`
+          : '';
+
+        const createdAt = new Date(thread.latestMessage.createdAt).toLocaleString();
+
+        const item = `
+          <a href="/dashboard/chat/${thread.fromUser._id}" class="list-group-item list-group-item-action bg-dark text-light mb-2 rounded d-flex justify-content-between align-items-start">
+            <div>
+              <strong>${thread.fromUser.username}:</strong> ${thread.latestMessage.text}<br />
+              <small>${createdAt}</small>
+            </div>
+            ${unreadBadge}
+          </a>
+        `;
+
+        container.insertAdjacentHTML('beforeend', item);
+      });
+    } catch (error) {
+      console.error('Erro ao atualizar threads:', error);
+      document.getElementById('threads-container').innerHTML =
+        '<p class="text-danger">Erro ao carregar mensagens.</p>';
+    }
+  }
+
+  async function handleEnviarMensagem(e) {
+    e.preventDefault();
+
+    const toUser = document.getElementById('toUser').value;
+    const message = document.getElementById('message').value.trim();
+    const statusDiv = document.getElementById('sendStatus');
+
+    if (!toUser || !message) {
+      statusDiv.textContent = 'Por favor, preencha todos os campos.';
+      statusDiv.style.color = 'red';
+      return;
+    }
+
+    try {
+      const response = await fetch('/dashboard/send', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({ toUser, message })
+      });
+
+      if (!response.ok) throw new Error('Erro ao enviar mensagem');
+
+      statusDiv.textContent = 'Mensagem enviada com sucesso!';
+      statusDiv.style.color = 'lightgreen';
+
+      document.getElementById('message').value = '';
+      document.getElementById('toUser').selectedIndex = 0;
+
+      await atualizarThreads();
+    } catch (error) {
+      console.error(error);
+      statusDiv.textContent = 'Erro ao enviar mensagem.';
+      statusDiv.style.color = 'red';
+    }
+  }
+
+  document.getElementById('sendMessageForm').addEventListener('submit', handleEnviarMensagem);
+  setInterval(atualizarThreads, 5000);
+  atualizarThreads();
+</script>
+</body>
+</html>
