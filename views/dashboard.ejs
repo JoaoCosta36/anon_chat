@@ -4,51 +4,135 @@
   <meta charset="UTF-8" />
   <title>Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+  
   <style>
     body {
       background-color: #1e293b;
       color: white;
+      padding: 20px;
     }
-    .card {
+    .chat-box {
+      max-width: 700px;
+      margin: 0 auto;
       background-color: #334155;
-      border: none;
+      border-radius: 8px;
+      padding: 20px;
+      height: 80vh;
+      display: flex;
+      flex-direction: column;
     }
-    .form-control, .form-select {
+    .chat-header {
+      font-size: 1.25rem;
+      margin-bottom: 1rem;
+    }
+    .messages {
+      flex-grow: 1;
+      overflow-y: auto;
+      margin-bottom: 20px;
+      display: flex;
+      flex-direction: column;
+      scrollbar-width: thin;
+      scrollbar-color: #475569 transparent;
+    }
+    .messages::-webkit-scrollbar {
+      width: 8px;
+    }
+    .messages::-webkit-scrollbar-thumb {
+      background-color: #475569;
+      border-radius: 4px;
+    }
+    .message {
+      margin-bottom: 10px;
+      padding: 10px 15px;
+      border-radius: 12px;
+      max-width: 75%;
+      word-wrap: break-word;
+      white-space: pre-wrap;
+      position: relative;
+    }
+    .from-me {
+      background-color: #3b82f6;
+      align-self: flex-end;
+      color: white;
+      text-align: right;
+    }
+    .from-other {
+      background-color: #64748b;
+      align-self: flex-start;
+      color: white;
+    }
+    .timestamp {
+      font-size: 0.75rem;
+      margin-top: 4px;
+      color: #cbd5e1;
+    }
+    .read-status {
+      font-size: 0.7rem;
+      color: #a5b4fc;
+      margin-top: 2px;
+    }
+    form.d-flex > input.form-control,
+    form.d-flex > input[type="file"] {
       background-color: #1e293b;
       color: white;
       border: 1px solid #475569;
     }
-    .form-control::placeholder, .form-select {
+    form.d-flex > input.form-control::placeholder {
       color: #cbd5e1;
     }
-    .btn-primary {
+    #imagePreview {
+      max-width: 150px;
+      max-height: 150px;
+      margin-left: 10px;
+      border-radius: 8px;
+      object-fit: cover;
+    }
+    
+    /* Estilos para lista de resultados da pesquisa */
+    #searchResults {
+      background-color: #334155;
+      max-width: 400px;
+      margin-top: 5px;
+      padding: 0;
+      border: 1px solid #475569;
+      border-radius: 4px;
+      list-style-type: none;
+      color: white;
+      position: absolute;
+      z-index: 1000;
+      max-height: 200px;
+      overflow-y: auto;
+      display: none;
+    }
+    #searchResults li {
+      padding: 6px 10px;
+      cursor: pointer;
+      border-bottom: 1px solid #475569;
+    }
+    #searchResults li:last-child {
+      border-bottom: none;
+    }
+    #searchResults li:hover,
+    #searchResults li[aria-selected="true"] {
       background-color: #3b82f6;
-      border: none;
     }
-    .btn-primary:hover {
-      background-color: #2563eb;
+    
+    /* Container para input e resultados */
+    .search-container {
+      position: relative;
+      max-width: 400px;
     }
-    a {
-      color: #93c5fd;
-      text-decoration: none;
-    }
-    a:hover {
-      text-decoration: underline;
-    }
-    .list-group-item-action {
-      transition: background-color 0.2s;
-    }
-    .list-group-item-action:hover {
-      background-color: #475569;
-    }
+
+    /* Badge unread */
     .badge-unread {
       background-color: #ef4444;
-      font-size: 0.75rem;
-      padding: 4px 8px;
-      border-radius: 999px;
-      margin-left: 8px;
       color: white;
+      padding: 0.25em 0.6em;
+      border-radius: 12px;
+      font-size: 0.8rem;
+      font-weight: bold;
     }
   </style>
 </head>
@@ -59,8 +143,29 @@
       <a href="/logout" class="btn btn-danger mt-2">Sair</a>
     </header>
 
-    <section class="card p-4 mb-4" aria-labelledby="form-title">
+    <section class="card p-4 mb-4" aria-labelledby="form-title" style="position: relative;">
       <h3 id="form-title">Enviar mensagem</h3>
+
+      <!-- Pesquisa de utilizadores -->
+      <form id="searchForm" class="mb-3" role="search" aria-label="Pesquisar usuários" onsubmit="return false;">
+        <div class="input-group search-container">
+          <input
+            type="search"
+            id="searchInput"
+            name="q"
+            class="form-control"
+            placeholder="Pesquisar utilizador..."
+            aria-label="Campo de pesquisa de utilizadores"
+            autocomplete="off"
+            aria-autocomplete="list"
+            aria-controls="searchResults"
+            aria-haspopup="listbox"
+          />
+          <button type="submit" class="btn btn-primary">Pesquisar</button>
+          <ul id="searchResults" role="listbox" aria-label="Resultados da pesquisa"></ul>
+        </div>
+      </form>
+
       <form id="sendMessageForm" autocomplete="off" aria-describedby="sendStatus">
         <div class="mb-3">
           <label for="toUser" class="form-label">Para:</label>
@@ -82,9 +187,7 @@
 
     <section class="card p-4" aria-labelledby="threads-title">
       <h3 id="threads-title">Mensagens recebidas</h3>
-      <div id="threads-container" class="list-group" aria-live="polite">
-        <!-- Lista de threads será atualizada aqui via JS -->
-      </div>
+      <div id="threads-container" class="list-group" aria-live="polite" aria-relevant="additions removals"></div>
     </section>
   </div>
 
@@ -105,15 +208,17 @@
 
       threads.forEach(thread => {
         const unreadBadge = thread.unreadCount > 0
-          ? `<span class="badge-unread">${thread.unreadCount}</span>`
+          ? `<span class="badge-unread" aria-label="${thread.unreadCount} mensagens não lidas">${thread.unreadCount}</span>`
           : '';
 
         const createdAt = new Date(thread.latestMessage.createdAt).toLocaleString();
 
         const item = `
-          <a href="/dashboard/chat/${thread.fromUser._id}" class="list-group-item list-group-item-action bg-dark text-light mb-2 rounded d-flex justify-content-between align-items-start">
+          <a href="/dashboard/chat/${thread.fromUser._id}" 
+             class="list-group-item list-group-item-action bg-dark text-light mb-2 rounded d-flex justify-content-between align-items-start"
+             aria-describedby="unread-${thread.fromUser._id}">
             <div>
-              <strong>${thread.fromUser.username}:</strong> ${thread.latestMessage.text}<br />
+              <strong>${thread.fromUser.username}:</strong> ${thread.latestMessage.text || '[Imagem]'}<br />
               <small>${createdAt}</small>
             </div>
             ${unreadBadge}
@@ -168,9 +273,104 @@
     }
   }
 
+  // Pesquisa dinâmica
+  const searchInput = document.getElementById('searchInput');
+  const searchResults = document.getElementById('searchResults');
+
+  async function pesquisarUsuarios(query) {
+    if (!query) {
+      searchResults.style.display = 'none';
+      searchResults.innerHTML = '';
+      return;
+    }
+    try {
+      const response = await fetch(`/dashboard/api/users?q=${encodeURIComponent(query)}`);
+      if (!response.ok) throw new Error('Erro na pesquisa');
+      const results = await response.json();
+
+      if (results.length === 0) {
+        searchResults.innerHTML = '<li>Nenhum usuário encontrado</li>';
+      } else {
+        searchResults.innerHTML = results.map(user => 
+          `<li role="option" tabindex="0" data-id="${user._id}">${user.username}</li>`
+        ).join('');
+      }
+      searchResults.style.display = 'block';
+    } catch (error) {
+      console.error('Erro na pesquisa:', error);
+      searchResults.style.display = 'none';
+      searchResults.innerHTML = '';
+    }
+  }
+
+  searchInput.addEventListener('input', (e) => {
+    pesquisarUsuarios(e.target.value.trim());
+  });
+
+  searchInput.addEventListener('keydown', (e) => {
+    const items = [...searchResults.querySelectorAll('li[role="option"]')];
+    if (!items.length) return;
+
+    let index = items.findIndex(item => item.getAttribute('aria-selected') === 'true');
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (index < items.length - 1) {
+        if (index >= 0) items[index].removeAttribute('aria-selected');
+        items[index + 1].setAttribute('aria-selected', 'true');
+        items[index + 1].focus();
+      } else if (index === -1) {
+        items[0].setAttribute('aria-selected', 'true');
+        items[0].focus();
+      }
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (index > 0) {
+        items[index].removeAttribute('aria-selected');
+        items[index - 1].setAttribute('aria-selected', 'true');
+        items[index - 1].focus();
+      }
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (index >= 0) {
+        selecionarUsuario(items[index]);
+      }
+    } else if (e.key === 'Escape') {
+      searchResults.style.display = 'none';
+    }
+  });
+
+  searchResults.addEventListener('click', (e) => {
+    if (e.target.tagName.toLowerCase() === 'li') {
+      selecionarUsuario(e.target);
+    }
+  });
+
+  function selecionarUsuario(item) {
+    const userId = item.getAttribute('data-id');
+    const username = item.textContent;
+
+    // Seleciona usuário no select
+    const select = document.getElementById('toUser');
+    const option = Array.from(select.options).find(opt => opt.value === userId);
+    if (option && !option.disabled) {
+      select.value = userId;
+    }
+
+    // Limpa pesquisa
+    searchInput.value = '';
+    searchResults.style.display = 'none';
+    searchResults.innerHTML = '';
+    searchInput.focus();
+  }
+
+  // Enviar mensagem
   document.getElementById('sendMessageForm').addEventListener('submit', handleEnviarMensagem);
-  setInterval(atualizarThreads, 5000);
+
+  // Atualiza threads inicialmente e a cada 30 segundos
   atualizarThreads();
+  setInterval(atualizarThreads, 30000);
 </script>
+
 </body>
 </html>

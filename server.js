@@ -12,13 +12,12 @@ mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
-.then(() => console.log('Conectado ao MongoDB'))
-.catch(err => console.error('Erro ao conectar ao MongoDB:', err));
+.then(() => console.log('✅ Conectado ao MongoDB'))
+.catch(err => console.error('❌ Erro ao conectar ao MongoDB:', err));
 
 // Middlewares
-app.use(express.json()); // Para JSON via AJAX
-app.use(express.urlencoded({ extended: true })); // Para formulários
-
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Motor de views (EJS)
@@ -27,18 +26,19 @@ app.set('views', path.join(__dirname, 'views'));
 
 // Configuração da sessão
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'defaultsecret', // garantir que tem secret
+  secret: process.env.SESSION_SECRET || 'defaultsecret',
   resave: false,
   saveUninitialized: false,
   store: MongoStore.create({ mongoUrl: process.env.MONGO_URI }),
   cookie: {
     maxAge: 1000 * 60 * 60 * 24, // 1 dia
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production' // só https em produção
+    secure: process.env.NODE_ENV === 'production', // só transmite cookie por HTTPS em produção
+    sameSite: 'lax' // previne bloqueios de sessão
   }
 }));
 
-// Middleware para disponibilizar dados da sessão em views (opcional mas útil)
+// Disponibiliza a sessão nas views
 app.use((req, res, next) => {
   res.locals.session = req.session;
   next();
@@ -50,7 +50,7 @@ app.use('/u', require('./routes/profile'));
 app.use('/dashboard', require('./routes/dashboard'));
 app.use('/messages', require('./routes/messages'));
 
-// Página 404 (deve ficar no fim)
+// Página 404
 app.use((req, res) => {
   res.status(404).render('404', { url: req.originalUrl });
 });
@@ -58,5 +58,5 @@ app.use((req, res) => {
 // Iniciar servidor
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Servidor rodando em http://localhost:${PORT}`);
+  console.log(`🚀 Servidor rodando em http://localhost:${PORT}`);
 });

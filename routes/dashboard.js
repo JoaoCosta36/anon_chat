@@ -8,7 +8,7 @@ const router = express.Router();
 const Message = require('../models/Message');
 const User = require('../models/User');
 
-// Configuração multer para upload de imagens
+// Multer configuração para upload de imagens
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const uploadPath = path.join(__dirname, '..', 'public', 'uploads');
@@ -25,21 +25,38 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// Página principal do dashboard
-router.get('/', async (req, res) => {
+// Middleware para checar se está autenticado
+function ensureAuth(req, res, next) {
   if (!req.session.userId) return res.redirect('/login');
+  next();
+}
 
+// Dashboard principal
+router.get('/', ensureAuth, async (req, res) => {
   try {
     const userId = new mongoose.Types.ObjectId(req.session.userId);
     const user = await User.findById(userId).lean();
-
     if (!user) return res.redirect('/login');
 
-    // Agregação corrigida para incluir mensagens enviadas e recebidas
+    // Pega usuários para dropdown (excluindo o próprio usuário)
+    const users = await User.find({ _id: { $ne: userId } }).lean();
+
+    // Busca threads: pegar o último contato (quem não é o usuário atual)
     const threads = await Message.aggregate([
-      { $match: { $or: [{ toUser: userId }, { fromUser: userId }] } },
-      { $sort: { createdAt: -1 } },
       {
+        $match: {
+          $or: [
+            { toUser: userId },
+            { fromUser: userId }
+          ]
+        }
+      },
+      {
+        // Ordena por data decrescente
+        $sort: { createdAt: -1 }
+      },
+      {
+        // Agrupa pela "outra parte" da conversa: se sou eu, agrupamos pelo outro usuário
         $group: {
           _id: {
             $cond: [
@@ -52,7 +69,12 @@ router.get('/', async (req, res) => {
           unreadCount: {
             $sum: {
               $cond: [
-                { $and: [{ $eq: ['$toUser', userId] }, { $eq: ['$read', false] }] },
+                {
+                  $and: [
+                    { $eq: ['$toUser', userId] },
+                    { $eq: ['$read', false] }
+                  ]
+                },
                 1,
                 0
               ]
@@ -62,19 +84,18 @@ router.get('/', async (req, res) => {
       }
     ]);
 
-    const populatedThreads = await Promise.all(threads.map(async thread => {
-      const fromUser = await User.findById(thread._id).lean();
+    // Popula dados do usuário e da mensagem para cada thread
+    const messageThreads = await Promise.all(threads.map(async (thread) => {
+      const otherUser = await User.findById(thread._id).lean();
       const latestMessage = await Message.findById(thread.latestMessageId).lean();
-      return { fromUser, latestMessage, unreadCount: thread.unreadCount };
+      return { fromUser: otherUser, latestMessage, unreadCount: thread.unreadCount };
     }));
-
-    const users = await User.find({ _id: { $ne: userId } }).lean();
 
     res.render('dashboard', {
       username: user.username,
       userId: user._id.toString(),
       users,
-      messageThreads: populatedThreads
+      messageThreads
     });
   } catch (err) {
     console.error('Erro ao carregar dashboard:', err);
@@ -82,13 +103,34 @@ router.get('/', async (req, res) => {
   }
 });
 
-// Página de chat
-router.get('/chat/:userId', async (req, res) => {
-  if (!req.session.userId) return res.redirect('/login');
+// Rota para pesquisa de utilizadores - corrigida para /dashboard/api/users (conforme front)
+router.get('/api/users', ensureAuth, async (req, res) => {
+  try {
+    const query = (req.query.q || '').trim();
+    if (!query) return res.json([]);
 
+    const userId = new mongoose.Types.ObjectId(req.session.userId);
+
+    const users = await User.find({
+      username: { $regex: query, $options: 'i' },
+      _id: { $ne: userId }
+    })
+      .limit(10)
+      .select('_id username')
+      .lean();
+
+    res.json(users);
+  } catch (err) {
+    console.error('Erro ao pesquisar usuários:', err);
+    res.status(500).json({ error: 'Erro ao pesquisar utilizadores.' });
+  }
+});
+
+// Página de chat entre usuários
+router.get('/chat/:userId', ensureAuth, async (req, res) => {
   try {
     const userId = new mongoose.Types.ObjectId(req.session.userId);
-    const otherUserId = new mongoose.Types.ObjectId(req.params.userId);
+    const otherUserId = mongoose.Types.ObjectId(req.params.userId);
 
     if (userId.equals(otherUserId)) return res.redirect('/dashboard');
 
@@ -99,6 +141,7 @@ router.get('/chat/:userId', async (req, res) => {
 
     if (!otherUser) return res.redirect('/dashboard');
 
+    // Marca mensagens recebidas do outro usuário como lidas
     await Message.updateMany(
       { fromUser: otherUserId, toUser: userId, read: false },
       { $set: { read: true } }
@@ -118,24 +161,19 @@ router.get('/chat/:userId', async (req, res) => {
   }
 });
 
-// Enviar mensagem (chat) com upload de imagem
-router.post('/chat/:userId/send', upload.single('image'), async (req, res) => {
-  if (!req.session.userId) return res.redirect('/login');
-
+// Enviar mensagem no chat com imagem (upload)
+router.post('/chat/:userId/send', ensureAuth, upload.single('image'), async (req, res) => {
   try {
-    const fromUserId = new mongoose.Types.ObjectId(req.session.userId);
-    const toUserId = new mongoose.Types.ObjectId(req.params.userId);
+    const fromUserId = mongoose.Types.ObjectId(req.session.userId);
+    const toUserId = mongoose.Types.ObjectId(req.params.userId);
     const { message } = req.body;
 
-    // Aceita mensagem de texto ou imagem (ou ambos)
     if ((!message || !message.trim()) && !req.file) {
       return res.redirect(`/dashboard/chat/${toUserId.toString()}`);
     }
 
     let imageUrl = null;
-    if (req.file) {
-      imageUrl = '/uploads/' + req.file.filename;
-    }
+    if (req.file) imageUrl = '/uploads/' + req.file.filename;
 
     await Message.create({
       fromUser: fromUserId,
@@ -152,41 +190,45 @@ router.post('/chat/:userId/send', upload.single('image'), async (req, res) => {
   }
 });
 
-// Enviar mensagem via AJAX (sem imagens)
-router.post('/send', async (req, res) => {
-  if (!req.session.userId) return res.status(401).json({ error: 'Não autorizado' });
-
+// Envio de mensagem via AJAX (sem imagens)
+router.post('/send', ensureAuth, async (req, res) => {
   try {
-    const fromUserId = new mongoose.Types.ObjectId(req.session.userId);
+    const fromUserId = mongoose.Types.ObjectId(req.session.userId);
     const { toUser, message } = req.body;
 
-    if (!message?.trim() || !toUser || fromUserId.equals(toUser)) {
+    if (!message?.trim() || !toUser) {
       return res.status(400).json({ error: 'Dados inválidos' });
+    }
+
+    if (fromUserId.equals(toUser)) {
+      return res.status(400).json({ error: 'Não pode enviar mensagem para si mesmo' });
     }
 
     await Message.create({
       fromUser: fromUserId,
-      toUser: new mongoose.Types.ObjectId(toUser),
+      toUser: mongoose.Types.ObjectId(toUser),
       text: message.trim(),
       read: false
     });
 
-    return res.json({ success: true });
+    res.json({ success: true });
   } catch (err) {
     console.error('Erro ao enviar mensagem:', err);
-    return res.status(500).json({ error: 'Erro interno' });
+    res.status(500).json({ error: 'Erro interno' });
   }
 });
 
-// API para threads de mensagens
-router.get('/api/threads', async (req, res) => {
-  if (!req.session.userId) return res.status(401).json({ error: 'Não autorizado' });
-
+// API para threads (usada no front-end para atualizar lista)
+router.get('/api/threads', ensureAuth, async (req, res) => {
   try {
     const userId = new mongoose.Types.ObjectId(req.session.userId);
 
     const threads = await Message.aggregate([
-      { $match: { $or: [{ toUser: userId }, { fromUser: userId }] } },
+      {
+        $match: {
+          $or: [{ toUser: userId }, { fromUser: userId }]
+        }
+      },
       { $sort: { createdAt: -1 } },
       {
         $group: {
@@ -201,7 +243,12 @@ router.get('/api/threads', async (req, res) => {
           unreadCount: {
             $sum: {
               $cond: [
-                { $and: [{ $eq: ['$toUser', userId] }, { $eq: ['$read', false] }] },
+                {
+                  $and: [
+                    { $eq: ['$toUser', userId] },
+                    { $eq: ['$read', false] }
+                  ]
+                },
                 1,
                 0
               ]
@@ -211,10 +258,10 @@ router.get('/api/threads', async (req, res) => {
       }
     ]);
 
-    const populatedThreads = await Promise.all(threads.map(async thread => {
-      const fromUser = await User.findById(thread._id).lean();
+    const populatedThreads = await Promise.all(threads.map(async (thread) => {
+      const otherUser = await User.findById(thread._id).lean();
       const latestMessage = await Message.findById(thread.latestMessageId).lean();
-      return { fromUser, latestMessage, unreadCount: thread.unreadCount };
+      return { fromUser: otherUser, latestMessage, unreadCount: thread.unreadCount };
     }));
 
     res.json(populatedThreads);
@@ -224,26 +271,26 @@ router.get('/api/threads', async (req, res) => {
   }
 });
 
-// API para carregar mensagens da conversa em JSON
-router.get('/api/chat/:userId/messages', async (req, res) => {
-  if (!req.session.userId) return res.status(401).json({ error: 'Não autorizado' });
+// API para mensagens da conversa
+router.get('/api/chat/:userId/messages', ensureAuth, async (req, res) => {
+ try {
+  const userId = new mongoose.Types.ObjectId(req.session.userId);
+  const otherUserId = mongoose.Types.ObjectId(req.params.userId);
 
-  try {
-    const userId = new mongoose.Types.ObjectId(req.session.userId);
-    const otherUserId = new mongoose.Types.ObjectId(req.params.userId);
+  const messages = await Message.find({
+    $or: [
+      { fromUser: userId, toUser: otherUserId },
+      { fromUser: otherUserId, toUser: userId }
+    ]
+  })
+  .sort({ createdAt: 1 })
+  .populate('fromUser')
+  .lean();
 
-    const messages = await Message.find({
-      $or: [
-        { fromUser: userId, toUser: otherUserId },
-        { fromUser: otherUserId, toUser: userId }
-      ]
-    }).sort({ createdAt: 1 }).populate('fromUser').lean();
-
-    res.json(messages);
-  } catch (err) {
-    console.error('Erro ao buscar mensagens:', err);
-    res.status(500).json({ error: 'Erro interno' });
-  }
-});
+  res.json(messages);
+} catch (err) {
+  console.error('Erro ao buscar mensagens:', err);
+  res.status(500).json({ error: 'Erro interno' });
+}});
 
 module.exports = router;
