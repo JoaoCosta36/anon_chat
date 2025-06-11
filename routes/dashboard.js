@@ -8,7 +8,7 @@ const router = express.Router();
 const Message = require('../models/Message');
 const User = require('../models/User');
 
-// Configuração do Multer
+// Configuração do Multer para upload de imagens
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const uploadPath = path.join(__dirname, '..', 'public', 'uploads');
@@ -23,7 +23,7 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// Middleware de autenticação
+// Middleware de autenticação simples
 function ensureAuth(req, res, next) {
   if (!req.session?.userId) return res.redirect('/login');
   next();
@@ -38,35 +38,19 @@ router.get('/', ensureAuth, async (req, res) => {
 
     const users = await User.find({ _id: { $ne: userId } }).lean();
 
+    // Obter threads recentes e contagem de não lidas em agregação
     const threads = await Message.aggregate([
-      {
-        $match: {
-          $or: [{ toUser: userId }, { fromUser: userId }]
-        }
-      },
+      { $match: { $or: [{ toUser: userId }, { fromUser: userId }] } },
       { $sort: { createdAt: -1 } },
       {
         $group: {
           _id: {
-            $cond: [
-              { $eq: ['$fromUser', userId] },
-              '$toUser',
-              '$fromUser'
-            ]
+            $cond: [{ $eq: ['$fromUser', userId] }, '$toUser', '$fromUser']
           },
           latestMessageId: { $first: '$_id' },
           unreadCount: {
             $sum: {
-              $cond: [
-                {
-                  $and: [
-                    { $eq: ['$toUser', userId] },
-                    { $eq: ['$read', false] }
-                  ]
-                },
-                1,
-                0
-              ]
+              $cond: [{ $and: [{ $eq: ['$toUser', userId] }, { $eq: ['$read', false] }] }, 1, 0]
             }
           }
         }
@@ -98,7 +82,7 @@ router.get('/', ensureAuth, async (req, res) => {
   }
 });
 
-// API: Pesquisa de utilizadores
+// Pesquisa de utilizadores para autocomplete
 router.get('/api/users', ensureAuth, async (req, res) => {
   try {
     const query = (req.query.q || '').trim();
@@ -111,12 +95,10 @@ router.get('/api/users', ensureAuth, async (req, res) => {
       _id: { $ne: userId }
     }).limit(10).select('_id username').lean();
 
-    const cleanUsers = users.map(u => ({
+    res.json(users.map(u => ({
       _id: u._id.toString(),
       username: u.username
-    }));
-
-    res.json(cleanUsers);
+    })));
   } catch (err) {
     console.error('Erro ao pesquisar utilizadores:', err);
     res.status(500).json({ error: 'Erro ao pesquisar utilizadores.' });
@@ -138,6 +120,7 @@ router.get('/chat/:userId', ensureAuth, async (req, res) => {
 
     if (!otherUser) return res.redirect('/dashboard');
 
+    // Marca mensagens como lidas
     await Message.updateMany(
       { fromUser: otherUserId, toUser: userId, read: false },
       { $set: { read: true } }
@@ -157,7 +140,7 @@ router.get('/chat/:userId', ensureAuth, async (req, res) => {
   }
 });
 
-// Enviar mensagem com imagem
+// Enviar mensagem com imagem (formulário padrão)
 router.post('/chat/:userId/send', ensureAuth, upload.single('image'), async (req, res) => {
   try {
     const fromUserId = new mongoose.Types.ObjectId(req.session.userId);
@@ -185,7 +168,7 @@ router.post('/chat/:userId/send', ensureAuth, upload.single('image'), async (req
   }
 });
 
-// Enviar mensagem via AJAX
+// Enviar mensagem via AJAX (sem imagem)
 router.post('/send', ensureAuth, async (req, res) => {
   try {
     const fromUserId = new mongoose.Types.ObjectId(req.session.userId);
@@ -225,29 +208,17 @@ router.get('/api/threads', ensureAuth, async (req, res) => {
     const userId = new mongoose.Types.ObjectId(req.session.userId);
 
     const threads = await Message.aggregate([
-      {
-        $match: {
-          $or: [{ toUser: userId }, { fromUser: userId }]
-        }
-      },
+      { $match: { $or: [{ toUser: userId }, { fromUser: userId }] } },
       { $sort: { createdAt: -1 } },
       {
         $group: {
           _id: {
-            $cond: [
-              { $eq: ['$fromUser', userId] },
-              '$toUser',
-              '$fromUser'
-            ]
+            $cond: [{ $eq: ['$fromUser', userId] }, '$toUser', '$fromUser']
           },
           latestMessageId: { $first: '$_id' },
           unreadCount: {
             $sum: {
-              $cond: [
-                { $and: [{ $eq: ['$toUser', userId] }, { $eq: ['$read', false] }] },
-                1,
-                0
-              ]
+              $cond: [{ $and: [{ $eq: ['$toUser', userId] }, { $eq: ['$read', false] }] }, 1, 0]
             }
           }
         }
@@ -279,19 +250,24 @@ router.get('/api/threads', ensureAuth, async (req, res) => {
   }
 });
 
-// API: Mensagens de uma conversa
+// API: Mensagens de uma conversa (AJAX)
 router.get('/api/chat/:userId/messages', ensureAuth, async (req, res) => {
   try {
     const userId = new mongoose.Types.ObjectId(req.session.userId);
     const otherUserId = new mongoose.Types.ObjectId(req.params.userId);
 
+    // Busca mensagens entre utilizadores com dados populados (username)
     const messages = await Message.find({
       $or: [
         { fromUser: userId, toUser: otherUserId },
         { fromUser: otherUserId, toUser: userId }
       ]
-    }).sort({ createdAt: 1 }).populate('fromUser', '_id username').lean();
+    })
+    .sort({ createdAt: 1 })
+    .populate('fromUser', '_id username')
+    .lean();
 
+    // Retorna dados mais leves, formatados para frontend
     const result = messages.map(msg => ({
       _id: msg._id.toString(),
       fromUser: {

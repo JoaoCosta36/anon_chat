@@ -97,7 +97,7 @@
 
     <div class="messages" id="messages">
       <% messages.forEach(msg => { %>
-        <div class="message <%= msg.fromUser && msg.fromUser._id.toString() === user._id.toString() ? 'from-me' : 'from-other' %>">
+        <div class="message <%= msg.fromUser && msg.fromUser._id.toString() === user._id.toString() ? 'from-me' : 'from-other' %>" data-created-at="<%= new Date(msg.createdAt).toISOString() %>">
           <% if (msg.imageUrl) { %>
             <img src="<%= msg.imageUrl %>" alt="Imagem enviada" style="max-width: 100%; border-radius: 8px; margin-bottom: 5px;">
           <% } %>
@@ -113,10 +113,10 @@
     </div>
 
     <form id="chatForm" method="POST" enctype="multipart/form-data" action="/dashboard/chat/<%= otherUser._id %>/send" class="d-flex" aria-label="Enviar nova mensagem">
-      <input id="messageInput" name="message" class="form-control me-2" placeholder="Escreva sua mensagem..." autocomplete="off" aria-label="Campo de mensagem" />
-      <input id="imageInput" type="file" name="image" accept="image/*" class="form-control me-2" aria-label="Selecionar imagem" />
+      <input id="messageInput" name="message" class="form-control me-2" placeholder="Escreva sua mensagem..." autocomplete="off" />
+      <input id="imageInput" type="file" name="image" accept="image/*" class="form-control me-2" />
       <img id="imagePreview" style="display:none;" alt="Pré-visualização da imagem" />
-      <button type="submit" class="btn btn-primary" aria-label="Botão enviar mensagem">Enviar</button>
+      <button type="submit" class="btn btn-primary">Enviar</button>
     </form>
 
     <a href="/dashboard" class="btn btn-secondary mt-3">← Voltar ao dashboard</a>
@@ -170,7 +170,7 @@
           imageInput.value = '';
           imagePreview.style.display = 'none';
           messageInput.required = true;
-          await loadMessages();
+          await loadMessages(true);
         } else {
           alert('Erro ao enviar mensagem.');
         }
@@ -180,17 +180,23 @@
       }
     });
 
-    async function loadMessages() {
+    async function loadMessages(scroll = false) {
+      const lastMsg = messagesDiv.lastElementChild;
+      const lastDate = lastMsg ? lastMsg.getAttribute('data-created-at') : null;
+      const url = lastDate
+        ? `/dashboard/api/chat/<%= otherUser._id %>/messages?after=${encodeURIComponent(lastDate)}`
+        : `/dashboard/api/chat/<%= otherUser._id %>/messages`;
+
       try {
-        const response = await fetch('/dashboard/api/chat/<%= otherUser._id %>/messages');
+        const response = await fetch(url);
         if (!response.ok) throw new Error('Erro ao buscar mensagens');
         const data = await response.json();
 
-        messagesDiv.innerHTML = '';
         data.forEach(msg => {
           const div = document.createElement('div');
           div.classList.add('message');
           div.classList.add(msg.fromUser && msg.fromUser._id === '<%= user._id %>' ? 'from-me' : 'from-other');
+          div.setAttribute('data-created-at', new Date(msg.createdAt).toISOString());
 
           let content = '';
           if (msg.imageUrl) {
@@ -217,7 +223,7 @@
           messagesDiv.appendChild(div);
         });
 
-        scrollToBottom();
+        if (scroll && data.length > 0) scrollToBottom();
       } catch (err) {
         console.error(err);
       }
