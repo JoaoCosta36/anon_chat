@@ -8,19 +8,17 @@ const router = express.Router();
 const Message = require('../models/Message');
 const User = require('../models/User');
 
-// Multer config para upload
+// Configuração do Multer
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const uploadPath = path.join(__dirname, '..', 'public', 'uploads');
-    if (!fs.existsSync(uploadPath)) {
-      fs.mkdirSync(uploadPath, { recursive: true });
-    }
+    if (!fs.existsSync(uploadPath)) fs.mkdirSync(uploadPath, { recursive: true });
     cb(null, uploadPath);
   },
   filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
     const ext = path.extname(file.originalname);
-    cb(null, file.fieldname + '-' + uniqueSuffix + ext);
+    cb(null, `${file.fieldname}-${unique}${ext}`);
   }
 });
 const upload = multer({ storage });
@@ -78,7 +76,14 @@ router.get('/', ensureAuth, async (req, res) => {
     const messageThreads = await Promise.all(threads.map(async (thread) => {
       const otherUser = await User.findById(thread._id).lean();
       const latestMessage = await Message.findById(thread.latestMessageId).lean();
-      return { fromUser: otherUser, latestMessage, unreadCount: thread.unreadCount };
+      return {
+        fromUser: {
+          _id: otherUser._id.toString(),
+          username: otherUser.username
+        },
+        latestMessage,
+        unreadCount: thread.unreadCount
+      };
     }));
 
     res.render('dashboard', {
@@ -93,7 +98,7 @@ router.get('/', ensureAuth, async (req, res) => {
   }
 });
 
-// Pesquisa de utilizadores
+// API: Pesquisa de utilizadores
 router.get('/api/users', ensureAuth, async (req, res) => {
   try {
     const query = (req.query.q || '').trim();
@@ -106,9 +111,14 @@ router.get('/api/users', ensureAuth, async (req, res) => {
       _id: { $ne: userId }
     }).limit(10).select('_id username').lean();
 
-    res.json(users);
+    const cleanUsers = users.map(u => ({
+      _id: u._id.toString(),
+      username: u.username
+    }));
+
+    res.json(cleanUsers);
   } catch (err) {
-    console.error('Erro ao pesquisar usuários:', err);
+    console.error('Erro ao pesquisar utilizadores:', err);
     res.status(500).json({ error: 'Erro ao pesquisar utilizadores.' });
   }
 });
@@ -138,7 +148,7 @@ router.get('/chat/:userId', ensureAuth, async (req, res) => {
         { fromUser: userId, toUser: otherUserId },
         { fromUser: otherUserId, toUser: userId }
       ]
-    }).sort({ createdAt: 1 }).populate('fromUser').lean();
+    }).sort({ createdAt: 1 }).populate('fromUser', '_id username').lean();
 
     res.render('chat', { user, otherUser, messages });
   } catch (err) {
@@ -147,7 +157,7 @@ router.get('/chat/:userId', ensureAuth, async (req, res) => {
   }
 });
 
-// Enviar mensagem com imagem (formulário)
+// Enviar mensagem com imagem
 router.post('/chat/:userId/send', ensureAuth, upload.single('image'), async (req, res) => {
   try {
     const fromUserId = new mongoose.Types.ObjectId(req.session.userId);
@@ -158,13 +168,12 @@ router.post('/chat/:userId/send', ensureAuth, upload.single('image'), async (req
       return res.redirect(`/dashboard/chat/${toUserId}`);
     }
 
-    let imageUrl = null;
-    if (req.file) imageUrl = '/uploads/' + req.file.filename;
+    const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
 
     await Message.create({
       fromUser: fromUserId,
       toUser: toUserId,
-      text: message ? message.trim() : '',
+      text: message?.trim() || '',
       imageUrl,
       read: false
     });
@@ -176,13 +185,13 @@ router.post('/chat/:userId/send', ensureAuth, upload.single('image'), async (req
   }
 });
 
-// ✅ Enviar mensagem via AJAX
+// Enviar mensagem via AJAX
 router.post('/send', ensureAuth, async (req, res) => {
   try {
     const fromUserId = new mongoose.Types.ObjectId(req.session.userId);
     const { toUser, message } = req.body;
 
-    if (!message || typeof message !== 'string' || !message.trim()) {
+    if (!message?.trim()) {
       return res.status(400).json({ error: 'Mensagem inválida.' });
     }
 
@@ -205,12 +214,12 @@ router.post('/send', ensureAuth, async (req, res) => {
 
     res.json({ success: true });
   } catch (err) {
-    console.error('❌ Erro ao enviar mensagem (AJAX):', err);
+    console.error('Erro ao enviar mensagem (AJAX):', err);
     res.status(500).json({ error: 'Erro interno ao enviar mensagem.' });
   }
 });
 
-// Threads de conversa
+// API: Threads de mensagens
 router.get('/api/threads', ensureAuth, async (req, res) => {
   try {
     const userId = new mongoose.Types.ObjectId(req.session.userId);
@@ -235,12 +244,7 @@ router.get('/api/threads', ensureAuth, async (req, res) => {
           unreadCount: {
             $sum: {
               $cond: [
-                {
-                  $and: [
-                    { $eq: ['$toUser', userId] },
-                    { $eq: ['$read', false] }
-                  ]
-                },
+                { $and: [{ $eq: ['$toUser', userId] }, { $eq: ['$read', false] }] },
                 1,
                 0
               ]
@@ -250,20 +254,32 @@ router.get('/api/threads', ensureAuth, async (req, res) => {
       }
     ]);
 
-    const populatedThreads = await Promise.all(threads.map(async (thread) => {
-      const otherUser = await User.findById(thread._id).lean();
-      const latestMessage = await Message.findById(thread.latestMessageId).lean();
-      return { fromUser: otherUser, latestMessage, unreadCount: thread.unreadCount };
+    const response = await Promise.all(threads.map(async (thread) => {
+      const user = await User.findById(thread._id).lean();
+      const latest = await Message.findById(thread.latestMessageId).lean();
+
+      return {
+        fromUser: {
+          _id: user._id.toString(),
+          username: user.username
+        },
+        latestMessage: {
+          _id: latest._id.toString(),
+          text: latest.text,
+          createdAt: latest.createdAt
+        },
+        unreadCount: thread.unreadCount
+      };
     }));
 
-    res.json(populatedThreads);
+    res.json(response);
   } catch (err) {
     console.error('Erro ao buscar threads:', err);
     res.status(500).json({ error: 'Erro interno' });
   }
 });
 
-// API: mensagens da conversa
+// API: Mensagens de uma conversa
 router.get('/api/chat/:userId/messages', ensureAuth, async (req, res) => {
   try {
     const userId = new mongoose.Types.ObjectId(req.session.userId);
@@ -274,9 +290,20 @@ router.get('/api/chat/:userId/messages', ensureAuth, async (req, res) => {
         { fromUser: userId, toUser: otherUserId },
         { fromUser: otherUserId, toUser: userId }
       ]
-    }).sort({ createdAt: 1 }).populate('fromUser').lean();
+    }).sort({ createdAt: 1 }).populate('fromUser', '_id username').lean();
 
-    res.json(messages);
+    const result = messages.map(msg => ({
+      _id: msg._id.toString(),
+      fromUser: {
+        _id: msg.fromUser._id.toString(),
+        username: msg.fromUser.username
+      },
+      text: msg.text,
+      imageUrl: msg.imageUrl,
+      createdAt: msg.createdAt
+    }));
+
+    res.json(result);
   } catch (err) {
     console.error('Erro ao buscar mensagens:', err);
     res.status(500).json({ error: 'Erro interno' });
