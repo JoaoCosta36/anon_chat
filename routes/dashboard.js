@@ -8,7 +8,7 @@ const router = express.Router();
 const Message = require('../models/Message');
 const User = require('../models/User');
 
-// Multer configuração para upload de imagens
+// Multer config para upload
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const uploadPath = path.join(__dirname, '..', 'public', 'uploads');
@@ -25,9 +25,9 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// Middleware para checar se está autenticado
+// Middleware de autenticação
 function ensureAuth(req, res, next) {
-  if (!req.session.userId) return res.redirect('/login');
+  if (!req.session?.userId) return res.redirect('/login');
   next();
 }
 
@@ -43,10 +43,7 @@ router.get('/', ensureAuth, async (req, res) => {
     const threads = await Message.aggregate([
       {
         $match: {
-          $or: [
-            { toUser: userId },
-            { fromUser: userId }
-          ]
+          $or: [{ toUser: userId }, { fromUser: userId }]
         }
       },
       { $sort: { createdAt: -1 } },
@@ -96,7 +93,7 @@ router.get('/', ensureAuth, async (req, res) => {
   }
 });
 
-// Rota para pesquisa de utilizadores
+// Pesquisa de utilizadores
 router.get('/api/users', ensureAuth, async (req, res) => {
   try {
     const query = (req.query.q || '').trim();
@@ -107,10 +104,7 @@ router.get('/api/users', ensureAuth, async (req, res) => {
     const users = await User.find({
       username: { $regex: query, $options: 'i' },
       _id: { $ne: userId }
-    })
-      .limit(10)
-      .select('_id username')
-      .lean();
+    }).limit(10).select('_id username').lean();
 
     res.json(users);
   } catch (err) {
@@ -119,11 +113,11 @@ router.get('/api/users', ensureAuth, async (req, res) => {
   }
 });
 
-// Página de chat entre usuários
+// Página de chat
 router.get('/chat/:userId', ensureAuth, async (req, res) => {
   try {
     const userId = new mongoose.Types.ObjectId(req.session.userId);
-    const otherUserId = mongoose.Types.ObjectId(req.params.userId);
+    const otherUserId = new mongoose.Types.ObjectId(req.params.userId);
 
     if (userId.equals(otherUserId)) return res.redirect('/dashboard');
 
@@ -153,15 +147,15 @@ router.get('/chat/:userId', ensureAuth, async (req, res) => {
   }
 });
 
-// Enviar mensagem com imagem
+// Enviar mensagem com imagem (formulário)
 router.post('/chat/:userId/send', ensureAuth, upload.single('image'), async (req, res) => {
   try {
-    const fromUserId = mongoose.Types.ObjectId(req.session.userId);
-    const toUserId = mongoose.Types.ObjectId(req.params.userId);
+    const fromUserId = new mongoose.Types.ObjectId(req.session.userId);
+    const toUserId = new mongoose.Types.ObjectId(req.params.userId);
     const { message } = req.body;
 
     if ((!message || !message.trim()) && !req.file) {
-      return res.redirect(`/dashboard/chat/${toUserId.toString()}`);
+      return res.redirect(`/dashboard/chat/${toUserId}`);
     }
 
     let imageUrl = null;
@@ -175,31 +169,31 @@ router.post('/chat/:userId/send', ensureAuth, upload.single('image'), async (req
       read: false
     });
 
-    res.redirect(`/dashboard/chat/${toUserId.toString()}`);
+    res.redirect(`/dashboard/chat/${toUserId}`);
   } catch (err) {
     console.error('Erro ao enviar mensagem com imagem:', err);
     res.status(500).send('Erro interno');
   }
 });
 
-// Enviar mensagem via AJAX (sem imagem)
+// ✅ Enviar mensagem via AJAX
 router.post('/send', ensureAuth, async (req, res) => {
   try {
-    const fromUserId = mongoose.Types.ObjectId(req.session.userId);
+    const fromUserId = new mongoose.Types.ObjectId(req.session.userId);
     const { toUser, message } = req.body;
 
-    if (!message?.trim() || !toUser) {
-      return res.status(400).json({ error: 'Dados inválidos' });
+    if (!message || typeof message !== 'string' || !message.trim()) {
+      return res.status(400).json({ error: 'Mensagem inválida.' });
     }
 
-    if (!mongoose.Types.ObjectId.isValid(toUser)) {
-      return res.status(400).json({ error: 'ID do destinatário inválido' });
+    if (!toUser || !mongoose.Types.ObjectId.isValid(toUser)) {
+      return res.status(400).json({ error: 'Destinatário inválido.' });
     }
 
-    const toUserId = mongoose.Types.ObjectId(toUser);
+    const toUserId = new mongoose.Types.ObjectId(toUser);
 
     if (fromUserId.equals(toUserId)) {
-      return res.status(400).json({ error: 'Não pode enviar mensagem para si mesmo' });
+      return res.status(400).json({ error: 'Não pode enviar mensagem para si mesmo.' });
     }
 
     await Message.create({
@@ -211,12 +205,12 @@ router.post('/send', ensureAuth, async (req, res) => {
 
     res.json({ success: true });
   } catch (err) {
-    console.error('❌ Erro ao enviar mensagem:', err);
-    res.status(500).json({ error: 'Erro interno' });
+    console.error('❌ Erro ao enviar mensagem (AJAX):', err);
+    res.status(500).json({ error: 'Erro interno ao enviar mensagem.' });
   }
 });
 
-// Threads
+// Threads de conversa
 router.get('/api/threads', ensureAuth, async (req, res) => {
   try {
     const userId = new mongoose.Types.ObjectId(req.session.userId);
@@ -269,21 +263,18 @@ router.get('/api/threads', ensureAuth, async (req, res) => {
   }
 });
 
-// Mensagens da conversa
+// API: mensagens da conversa
 router.get('/api/chat/:userId/messages', ensureAuth, async (req, res) => {
   try {
     const userId = new mongoose.Types.ObjectId(req.session.userId);
-    const otherUserId = mongoose.Types.ObjectId(req.params.userId);
+    const otherUserId = new mongoose.Types.ObjectId(req.params.userId);
 
     const messages = await Message.find({
       $or: [
         { fromUser: userId, toUser: otherUserId },
         { fromUser: otherUserId, toUser: userId }
       ]
-    })
-    .sort({ createdAt: 1 })
-    .populate('fromUser')
-    .lean();
+    }).sort({ createdAt: 1 }).populate('fromUser').lean();
 
     res.json(messages);
   } catch (err) {

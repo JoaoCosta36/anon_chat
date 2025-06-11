@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="pt-pt">
+<html lang="pt-PT">
 <head>
   <meta charset="UTF-8" />
   <title>Dashboard</title>
@@ -126,7 +126,7 @@
   <div class="container py-5">
     <header class="text-center mb-4">
       <h1>Bem-vindo, <%= username %>!</h1>
-      <a href="/logout" class="btn btn-danger mt-2">Sair</a>
+      <a href="/logout" class="btn btn-danger mt-2" type="button">Sair</a>
     </header>
 
     <section class="card p-4 mb-4" aria-labelledby="form-title">
@@ -135,8 +135,8 @@
       <form id="searchForm" class="mb-3" onsubmit="return false;">
         <div class="input-group search-container">
           <input type="search" id="searchInput" class="form-control" placeholder="Pesquisar utilizador..." autocomplete="off" />
-          <button type="submit" class="btn btn-primary">Pesquisar</button>
-          <ul id="searchResults"></ul>
+          <button type="button" class="btn btn-primary">Pesquisar</button>
+          <ul id="searchResults" role="listbox" aria-label="Resultados da pesquisa"></ul>
         </div>
       </form>
 
@@ -192,7 +192,8 @@
         const strong = document.createElement('strong');
         strong.textContent = `${thread.fromUser.username}: `;
 
-        const msgText = document.createTextNode(thread.latestMessage.text || '[Imagem]');
+        // Mostrar texto da mensagem, se tiver, senão [Imagem]
+        const msgText = document.createTextNode(thread.latestMessage.text && thread.latestMessage.text.trim().length > 0 ? thread.latestMessage.text : '[Imagem]');
         const date = document.createElement('small');
         date.textContent = new Date(thread.latestMessage.createdAt).toLocaleString();
 
@@ -268,15 +269,18 @@
     }
     try {
       const response = await fetch(`/dashboard/api/users?q=${encodeURIComponent(query)}`);
+      if (!response.ok) throw new Error('Erro na pesquisa de usuários');
       const results = await response.json();
       if (!results.length) {
-        searchResults.innerHTML = '<li>Nenhum usuário encontrado</li>';
+        searchResults.innerHTML = '<li role="option" tabindex="-1" aria-disabled="true">Nenhum usuário encontrado</li>';
       } else {
         searchResults.innerHTML = results.map(user => `<li role="option" tabindex="0" data-id="${user._id}">${user.username}</li>`).join('');
       }
       searchResults.style.display = 'block';
     } catch (error) {
       console.error('Erro na pesquisa:', error);
+      searchResults.style.display = 'none';
+      searchResults.innerHTML = '';
     }
   }
 
@@ -285,7 +289,7 @@
   });
 
   searchResults.addEventListener('click', (e) => {
-    if (e.target.tagName.toLowerCase() === 'li') {
+    if (e.target.tagName.toLowerCase() === 'li' && !e.target.hasAttribute('aria-disabled')) {
       selecionarUsuario(e.target);
     }
   });
