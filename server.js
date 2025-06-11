@@ -7,6 +7,9 @@ const path = require('path');
 
 const app = express();
 
+// Ativa confiança no proxy (necessário em produção com HTTPS e reverse proxy como Nginx/Render/etc)
+app.set('trust proxy', 1);
+
 // Conexão com o banco de dados
 mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
@@ -24,21 +27,24 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
-// Configuração da sessão
+// Sessão segura com MongoDB Store
 app.use(session({
   secret: process.env.SESSION_SECRET || 'defaultsecret',
   resave: false,
   saveUninitialized: false,
-  store: MongoStore.create({ mongoUrl: process.env.MONGO_URI }),
+  store: MongoStore.create({
+    mongoUrl: process.env.MONGO_URI,
+    collectionName: 'sessions'
+  }),
   cookie: {
     maxAge: 1000 * 60 * 60 * 24, // 1 dia
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production', // só transmite cookie por HTTPS em produção
-    sameSite: 'lax' // previne bloqueios de sessão
+    secure: process.env.NODE_ENV === 'production', // HTTPS em produção
+    sameSite: 'lax'
   }
 }));
 
-// Disponibiliza a sessão nas views
+// Torna a sessão acessível nas views
 app.use((req, res, next) => {
   res.locals.session = req.session;
   next();
@@ -55,8 +61,8 @@ app.use((req, res) => {
   res.status(404).render('404', { url: req.originalUrl });
 });
 
-// Iniciar servidor
+// Inicia o servidor
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`🚀 Servidor rodando em http://localhost:${PORT}`);
+  console.log(`🚀 Servidor rodando em http${process.env.NODE_ENV === 'production' ? 's' : ''}://localhost:${PORT}`);
 });
