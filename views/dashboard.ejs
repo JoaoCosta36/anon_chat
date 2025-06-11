@@ -4,9 +4,9 @@
   <meta charset="UTF-8" />
   <title>Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  
+
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
-  
+
   <style>
     body {
       background-color: #1e293b;
@@ -22,10 +22,6 @@
       height: 80vh;
       display: flex;
       flex-direction: column;
-    }
-    .chat-header {
-      font-size: 1.25rem;
-      margin-bottom: 1rem;
     }
     .messages {
       flex-grow: 1;
@@ -50,7 +46,6 @@
       max-width: 75%;
       word-wrap: break-word;
       white-space: pre-wrap;
-      position: relative;
     }
     .from-me {
       background-color: #3b82f6;
@@ -79,9 +74,6 @@
       color: white;
       border: 1px solid #475569;
     }
-    form.d-flex > input.form-control::placeholder {
-      color: #cbd5e1;
-    }
     #imagePreview {
       max-width: 150px;
       max-height: 150px;
@@ -89,8 +81,6 @@
       border-radius: 8px;
       object-fit: cover;
     }
-    
-    /* Estilos para lista de resultados da pesquisa */
     #searchResults {
       background-color: #334155;
       max-width: 400px;
@@ -118,14 +108,10 @@
     #searchResults li[aria-selected="true"] {
       background-color: #3b82f6;
     }
-    
-    /* Container para input e resultados */
     .search-container {
       position: relative;
       max-width: 400px;
     }
-
-    /* Badge unread */
     .badge-unread {
       background-color: #ef4444;
       color: white;
@@ -143,30 +129,18 @@
       <a href="/logout" class="btn btn-danger mt-2">Sair</a>
     </header>
 
-    <section class="card p-4 mb-4" aria-labelledby="form-title" style="position: relative;">
+    <section class="card p-4 mb-4" aria-labelledby="form-title">
       <h3 id="form-title">Enviar mensagem</h3>
 
-      <!-- Pesquisa de utilizadores -->
-      <form id="searchForm" class="mb-3" role="search" aria-label="Pesquisar usuários" onsubmit="return false;">
+      <form id="searchForm" class="mb-3" onsubmit="return false;">
         <div class="input-group search-container">
-          <input
-            type="search"
-            id="searchInput"
-            name="q"
-            class="form-control"
-            placeholder="Pesquisar utilizador..."
-            aria-label="Campo de pesquisa de utilizadores"
-            autocomplete="off"
-            aria-autocomplete="list"
-            aria-controls="searchResults"
-            aria-haspopup="listbox"
-          />
+          <input type="search" id="searchInput" class="form-control" placeholder="Pesquisar utilizador..." autocomplete="off" />
           <button type="submit" class="btn btn-primary">Pesquisar</button>
-          <ul id="searchResults" role="listbox" aria-label="Resultados da pesquisa"></ul>
+          <ul id="searchResults"></ul>
         </div>
       </form>
 
-      <form id="sendMessageForm" autocomplete="off" aria-describedby="sendStatus">
+      <form id="sendMessageForm" autocomplete="off">
         <div class="mb-3">
           <label for="toUser" class="form-label">Para:</label>
           <select id="toUser" name="toUser" class="form-select" required>
@@ -182,12 +156,12 @@
         </div>
         <button class="btn btn-primary" type="submit">Enviar</button>
       </form>
-      <div id="sendStatus" class="mt-2" role="alert" aria-live="polite"></div>
+      <div id="sendStatus" class="mt-2"></div>
     </section>
 
     <section class="card p-4" aria-labelledby="threads-title">
       <h3 id="threads-title">Mensagens recebidas</h3>
-      <div id="threads-container" class="list-group" aria-live="polite" aria-relevant="additions removals"></div>
+      <div id="threads-container" class="list-group"></div>
     </section>
   </div>
 
@@ -202,43 +176,57 @@
       container.innerHTML = '';
 
       if (!threads.length) {
-        container.innerHTML = '<p class="text-muted">Nenhuma mensagem recebida.</p>';
+        const msg = document.createElement('p');
+        msg.className = 'text-muted';
+        msg.textContent = 'Nenhuma mensagem recebida.';
+        container.appendChild(msg);
         return;
       }
 
       threads.forEach(thread => {
-        const unreadBadge = thread.unreadCount > 0
-          ? `<span class="badge-unread" aria-label="${thread.unreadCount} mensagens não lidas">${thread.unreadCount}</span>`
-          : '';
+        const link = document.createElement('a');
+        link.href = `/dashboard/chat/${thread.fromUser._id}`;
+        link.className = 'list-group-item list-group-item-action bg-dark text-light mb-2 rounded d-flex justify-content-between align-items-start';
 
-        const createdAt = new Date(thread.latestMessage.createdAt).toLocaleString();
+        const infoDiv = document.createElement('div');
+        const strong = document.createElement('strong');
+        strong.textContent = `${thread.fromUser.username}: `;
 
-        const item = `
-          <a href="/dashboard/chat/${thread.fromUser._id}" 
-             class="list-group-item list-group-item-action bg-dark text-light mb-2 rounded d-flex justify-content-between align-items-start"
-             aria-describedby="unread-${thread.fromUser._id}">
-            <div>
-              <strong>${thread.fromUser.username}:</strong> ${thread.latestMessage.text || '[Imagem]'}<br />
-              <small>${createdAt}</small>
-            </div>
-            ${unreadBadge}
-          </a>
-        `;
+        const msgText = document.createTextNode(thread.latestMessage.text || '[Imagem]');
+        const date = document.createElement('small');
+        date.textContent = new Date(thread.latestMessage.createdAt).toLocaleString();
 
-        container.insertAdjacentHTML('beforeend', item);
+        infoDiv.appendChild(strong);
+        infoDiv.appendChild(msgText);
+        infoDiv.appendChild(document.createElement('br'));
+        infoDiv.appendChild(date);
+        link.appendChild(infoDiv);
+
+        if (thread.unreadCount > 0) {
+          const badge = document.createElement('span');
+          badge.className = 'badge-unread';
+          badge.setAttribute('aria-label', `${thread.unreadCount} mensagens não lidas`);
+          badge.textContent = thread.unreadCount;
+          link.appendChild(badge);
+        }
+
+        container.appendChild(link);
       });
     } catch (error) {
       console.error('Erro ao atualizar threads:', error);
-      document.getElementById('threads-container').innerHTML =
-        '<p class="text-danger">Erro ao carregar mensagens.</p>';
+      const errMsg = document.createElement('p');
+      errMsg.className = 'text-danger';
+      errMsg.textContent = 'Erro ao carregar mensagens.';
+      document.getElementById('threads-container').appendChild(errMsg);
     }
   }
 
   async function handleEnviarMensagem(e) {
     e.preventDefault();
 
-    const toUser = document.getElementById('toUser').value;
-    const message = document.getElementById('message').value.trim();
+    const form = document.getElementById('sendMessageForm');
+    const toUser = form.toUser.value;
+    const message = form.message.value.trim();
     const statusDiv = document.getElementById('sendStatus');
 
     if (!toUser || !message) {
@@ -250,10 +238,7 @@
     try {
       const response = await fetch('/dashboard/send', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ toUser, message })
       });
 
@@ -261,10 +246,7 @@
 
       statusDiv.textContent = 'Mensagem enviada com sucesso!';
       statusDiv.style.color = 'lightgreen';
-
-      document.getElementById('message').value = '';
-      document.getElementById('toUser').selectedIndex = 0;
-
+      form.reset();
       await atualizarThreads();
     } catch (error) {
       console.error(error);
@@ -273,7 +255,8 @@
     }
   }
 
-  // Pesquisa dinâmica
+  document.getElementById('sendMessageForm').addEventListener('submit', handleEnviarMensagem);
+
   const searchInput = document.getElementById('searchInput');
   const searchResults = document.getElementById('searchResults');
 
@@ -285,59 +268,20 @@
     }
     try {
       const response = await fetch(`/dashboard/api/users?q=${encodeURIComponent(query)}`);
-      if (!response.ok) throw new Error('Erro na pesquisa');
       const results = await response.json();
-
-      if (results.length === 0) {
+      if (!results.length) {
         searchResults.innerHTML = '<li>Nenhum usuário encontrado</li>';
       } else {
-        searchResults.innerHTML = results.map(user => 
-          `<li role="option" tabindex="0" data-id="${user._id}">${user.username}</li>`
-        ).join('');
+        searchResults.innerHTML = results.map(user => `<li role="option" tabindex="0" data-id="${user._id}">${user.username}</li>`).join('');
       }
       searchResults.style.display = 'block';
     } catch (error) {
       console.error('Erro na pesquisa:', error);
-      searchResults.style.display = 'none';
-      searchResults.innerHTML = '';
     }
   }
 
   searchInput.addEventListener('input', (e) => {
     pesquisarUsuarios(e.target.value.trim());
-  });
-
-  searchInput.addEventListener('keydown', (e) => {
-    const items = [...searchResults.querySelectorAll('li[role="option"]')];
-    if (!items.length) return;
-
-    let index = items.findIndex(item => item.getAttribute('aria-selected') === 'true');
-
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      if (index < items.length - 1) {
-        if (index >= 0) items[index].removeAttribute('aria-selected');
-        items[index + 1].setAttribute('aria-selected', 'true');
-        items[index + 1].focus();
-      } else if (index === -1) {
-        items[0].setAttribute('aria-selected', 'true');
-        items[0].focus();
-      }
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      if (index > 0) {
-        items[index].removeAttribute('aria-selected');
-        items[index - 1].setAttribute('aria-selected', 'true');
-        items[index - 1].focus();
-      }
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      if (index >= 0) {
-        selecionarUsuario(items[index]);
-      }
-    } else if (e.key === 'Escape') {
-      searchResults.style.display = 'none';
-    }
   });
 
   searchResults.addEventListener('click', (e) => {
@@ -348,26 +292,17 @@
 
   function selecionarUsuario(item) {
     const userId = item.getAttribute('data-id');
-    const username = item.textContent;
-
-    // Seleciona usuário no select
     const select = document.getElementById('toUser');
     const option = Array.from(select.options).find(opt => opt.value === userId);
     if (option && !option.disabled) {
       select.value = userId;
     }
-
-    // Limpa pesquisa
     searchInput.value = '';
     searchResults.style.display = 'none';
     searchResults.innerHTML = '';
     searchInput.focus();
   }
 
-  // Enviar mensagem
-  document.getElementById('sendMessageForm').addEventListener('submit', handleEnviarMensagem);
-
-  // Atualiza threads inicialmente e a cada 30 segundos
   atualizarThreads();
   setInterval(atualizarThreads, 30000);
 </script>
